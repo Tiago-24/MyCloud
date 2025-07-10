@@ -4,22 +4,26 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.security.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
 import java.util.*;
-import java.util.stream.Collectors;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.util.Base64;
 import javax.net.ServerSocketFactory;
 import javax.net.ssl.SSLServerSocketFactory;
 
 public class MyCloudServer {
-    private static final int PORT = 23456;
-    private static final File USERS_FILE = new File("users");
-    private static final File USERS_HMAC = new File("users.mac");
+    // Paths relativos ao diretório 'server' (local onde este .class é executado)
+    private static final File USERS_FILE = new File("../config/users");
+    private static final File USERS_HMAC = new File("../config/users.mac");
 
     public static void main(String[] args) throws Exception {
+        if (args.length != 1) {
+            System.err.println("Uso: java mycloudserver.MyCloudServer <porta_TCP>");
+            System.exit(1);
+        }
+        int port = Integer.parseInt(args[0]);
+
         // 1) Validar integridade de users via HMAC
         System.out.print("Validando ficheiro de utilizadores… ");
         String macPassword = promptHmacPassword();
@@ -29,13 +33,15 @@ public class MyCloudServer {
         }
         System.out.println("OK");
 
-        // 2) Configurar TLS
-        System.setProperty("javax.net.ssl.keyStore", "keystore.server");
-        System.setProperty("javax.net.ssl.keyStorePassword", "epocaespecial");
+        // 2) Configurar TLS: usar JKS em keystores/keystore.server
+        System.setProperty("javax.net.ssl.keyStore",
+            System.getProperty("keystore.path", "../keystores/keystore.server"));
+        System.setProperty("javax.net.ssl.keyStorePassword",
+            System.getProperty("keystore.pass", "epocaespecial"));
 
         ServerSocketFactory ssf = SSLServerSocketFactory.getDefault();
-        try (ServerSocket serverSock = ssf.createServerSocket(PORT)) {
-            System.out.println("Servidor TLS a ouvir na porta " + PORT);
+        try (ServerSocket serverSock = ssf.createServerSocket(port)) {
+            System.out.println("Servidor TLS a ouvir na porta " + port);
             while (true) {
                 Socket client = serverSock.accept();
                 new ClientHandler(client).start();
@@ -47,7 +53,9 @@ public class MyCloudServer {
         Console console = System.console();
         if (console != null) {
             char[] pwd = console.readPassword("Password MAC: ");
-            return new String(pwd);
+            String s = new String(pwd);
+            Arrays.fill(pwd, ' ');
+            return s;
         } else {
             System.out.print("Password MAC: ");
             return new BufferedReader(new InputStreamReader(System.in)).readLine();
@@ -64,7 +72,7 @@ public class MyCloudServer {
                 ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
                 ObjectInputStream  in  = new ObjectInputStream(socket.getInputStream());
             ) {
-                // Autenticação
+                // Autenticação dinâmico, recarrega users a cada acesso
                 String user = in.readObject().toString();
                 String pass = in.readObject().toString();
                 if (!Auth.check(user, pass)) {
@@ -94,17 +102,18 @@ public class MyCloudServer {
 
         private void dispatch(String cmd, String user,
                               ObjectInputStream in,
-                              ObjectOutputStream out) throws Exception
-        {
-            // Garante que o storage do user existe
+                              ObjectOutputStream out) throws Exception {
+            // Diretório de armazenamento relativo: server/server_storage/<user>
             File userDir = new File("server_storage", user);
-            userDir.mkdirs();
+            if (!userDir.exists() && !userDir.mkdirs()) {
+                throw new IOException("Não foi possível criar diretório de usuário: " + userDir.getPath());
+            }
 
             switch (cmd) {
-                case "-e": // upload
+                case "-e": // upload atomizado
                     handleUpload(userDir, in, out);
                     break;
-                case "-r": // download
+                case "-r": // download simples
                     handleDownload(userDir, in, out);
                     break;
                 default:
@@ -114,34 +123,51 @@ public class MyCloudServer {
 
         private void handleUpload(File userDir,
                                   ObjectInputStream in,
-                                  ObjectOutputStream out) throws Exception
-        {
-            // Recebe múltiplos ficheiros até "Terminou"
+                                  ObjectOutputStream out) throws Exception {
+            // 1) Receber lista de nomes até 'Terminou'
+            List<String> names = new ArrayList<>();
             while (true) {
                 String name = in.readObject().toString();
                 if ("Terminou".equals(name)) break;
-                long size = (Long) in.readObject();
+                names.add(name);
+            }
+            // 2) Verificar existência prévia
+            for (String name : names) {
+                if (new File(userDir, name).exists()) {
+                    out.writeObject("ERRO: já existe " + name + ", abortando upload");
+                    return;
+                }
+            }
+            out.writeObject("OK: pode enviar");
 
-                File dst = new File(userDir, name);
-                try (FileOutputStream fos = new FileOutputStream(dst)) {
+            // 3) Receber ficheiros para temporários
+            Map<String,Path> tempFiles = new LinkedHashMap<>();
+            for (String name : names) {
+                long size = (Long) in.readObject();
+                Path temp = Files.createTempFile("upload-", null);
+                try (OutputStream fos = Files.newOutputStream(temp)) {
                     byte[] buf = new byte[4096];
                     long read = 0;
                     while (read < size) {
-                        int r = in.read(buf, 0,
-                            (int)Math.min(buf.length, size - read));
+                        int r = in.read(buf, 0, (int)Math.min(buf.length, size - read));
                         fos.write(buf, 0, r);
                         read += r;
                     }
                 }
-                out.writeObject("UPLOAD OK: " + name);
+                tempFiles.put(name, temp);
+            }
+
+            // 4) Mover para diretório final e confirmar
+            for (Map.Entry<String,Path> e : tempFiles.entrySet()) {
+                Path dst = userDir.toPath().resolve(e.getKey());
+                Files.move(e.getValue(), dst, StandardCopyOption.ATOMIC_MOVE);
+                out.writeObject("UPLOAD OK: " + e.getKey());
             }
         }
 
         private void handleDownload(File userDir,
                                     ObjectInputStream in,
-                                    ObjectOutputStream out) throws Exception
-        {
-            // Envia múltiplos ficheiros até "Terminou"
+                                    ObjectOutputStream out) throws Exception {
             while (true) {
                 String name = in.readObject().toString();
                 if ("Terminou".equals(name)) break;
@@ -150,11 +176,9 @@ public class MyCloudServer {
                     out.writeObject("ERRO: não existe " + name);
                     continue;
                 }
-                // Header: nome e tamanho
                 out.writeObject(f.getName());
                 out.writeObject(f.length());
-
-                try (FileInputStream fis = new FileInputStream(f)) {
+                try (InputStream fis = new FileInputStream(f)) {
                     byte[] buf = new byte[4096];
                     int r;
                     while ((r = fis.read(buf)) != -1) {
@@ -166,22 +190,18 @@ public class MyCloudServer {
         }
     }
 
-    /** Lê users:salt:hash e autentica passwords salgadas **/
+    /** Autenticação dinâmica, recarrega users a cada chamada **/
     static class Auth {
-        private static final Map<String,String[]> users = loadUsers();
-
         public static boolean check(String u, String p) {
+            Map<String,String[]> users = loadUsers();
             String[] parts = users.get(u);
             if (parts == null) return false;
             try {
-                String salt = parts[0];
-                String storedHash = parts[1];
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
-                md.update(salt.getBytes("UTF-8"));
-                md.update(p.getBytes("UTF-8"));
-                byte[] h = md.digest();
-                String computed = Base64.getEncoder().encodeToString(h);
-                return storedHash.equals(computed);
+                md.update(parts[0].getBytes(StandardCharsets.UTF_8));
+                md.update(p.getBytes(StandardCharsets.UTF_8));
+                String computed = Base64.getEncoder().encodeToString(md.digest());
+                return computed.equals(parts[1]);
             } catch (Exception e) {
                 return false;
             }
@@ -189,10 +209,13 @@ public class MyCloudServer {
 
         private static Map<String,String[]> loadUsers() {
             try {
-                return Files.readAllLines(USERS_FILE.toPath()).stream()
-                    .map(l -> l.split(":", 3))
-                    .collect(Collectors.toMap(a -> a[0],
-                                              a -> new String[]{a[1], a[2]}));
+                List<String> lines = Files.readAllLines(USERS_FILE.toPath(), StandardCharsets.UTF_8);
+                Map<String,String[]> map = new HashMap<>();
+                for (String l : lines) {
+                    String[] a = l.split(":", 3);
+                    if (a.length == 3) map.put(a[0], new String[]{a[1], a[2]});
+                }
+                return map;
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
@@ -202,18 +225,12 @@ public class MyCloudServer {
     /** Validação HMAC-SHA256 de um ficheiro **/
     static class HMAC {
         public static boolean check(File dataFile, File macFile, String pwd) throws Exception {
-            // 1) lê todo o ficheiro de dados
             byte[] data = Files.readAllBytes(dataFile.toPath());
-            // 2) calcula o HMAC-SHA256 binário
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(pwd.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             byte[] expected = mac.doFinal(data);
-
-            // 3) lê o Base64 guardado em users.mac e decodifica para bytes
             String macB64 = new String(Files.readAllBytes(macFile.toPath()), StandardCharsets.UTF_8).trim();
             byte[] actual = Base64.getDecoder().decode(macB64);
-
-            // 4) compara binário ↔ binário
             return MessageDigest.isEqual(expected, actual);
         }
     }
