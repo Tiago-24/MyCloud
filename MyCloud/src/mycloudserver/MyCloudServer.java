@@ -13,9 +13,9 @@ import javax.net.ServerSocketFactory;
 import javax.net.ssl.SSLServerSocketFactory;
 
 public class MyCloudServer {
-    // Paths relativos ao diretório 'server' (local onde este .class é executado)
-    private static final File USERS_FILE = new File("../config/users");
-    private static final File USERS_HMAC = new File("../config/users.mac");
+    private static final File STORAGE_DIR = new File("server_storage");
+    private static final File USERS_FILE   = new File("../config/users");
+    private static final File USERS_HMAC   = new File("../config/users.mac");
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
@@ -26,14 +26,14 @@ public class MyCloudServer {
 
         // 1) Validar integridade de users via HMAC
         System.out.print("Validando ficheiro de utilizadores… ");
-        String macPassword = promptHmacPassword();
-        if (!HMAC.check(USERS_FILE, USERS_HMAC, macPassword)) {
+        String macPwd = promptHmacPassword();
+        if (!HMAC.check(USERS_FILE, USERS_HMAC, macPwd)) {
             System.err.println("Falha na integridade de 'users'");
             System.exit(1);
         }
         System.out.println("OK");
 
-        // 2) Configurar TLS: usar JKS em keystores/keystore.server
+        // 2) Configurar TLS
         System.setProperty("javax.net.ssl.keyStore",
             System.getProperty("keystore.path", "../keystores/keystore.server"));
         System.setProperty("javax.net.ssl.keyStorePassword",
@@ -43,8 +43,7 @@ public class MyCloudServer {
         try (ServerSocket serverSock = ssf.createServerSocket(port)) {
             System.out.println("Servidor TLS a ouvir na porta " + port);
             while (true) {
-                Socket client = serverSock.accept();
-                new ClientHandler(client).start();
+                new ClientHandler(serverSock.accept()).start();
             }
         }
     }
@@ -64,15 +63,14 @@ public class MyCloudServer {
 
     private static class ClientHandler extends Thread {
         private final Socket socket;
-        public ClientHandler(Socket s) { this.socket = s; }
+        ClientHandler(Socket s) { this.socket = s; }
 
-        @Override
         public void run() {
             try (
                 ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
                 ObjectInputStream  in  = new ObjectInputStream(socket.getInputStream());
             ) {
-                // Autenticação dinâmico, recarrega users a cada acesso
+                // Autenticação
                 String user = in.readObject().toString();
                 String pass = in.readObject().toString();
                 if (!Auth.check(user, pass)) {
@@ -88,9 +86,8 @@ public class MyCloudServer {
                         out.writeObject("Até breve!");
                         break;
                     }
-                    dispatch(cmd, user, in, out);
+                    dispatch(cmd, in, out);
                 }
-
             } catch (EOFException eof) {
                 // cliente desconectou
             } catch (Exception e) {
@@ -100,88 +97,91 @@ public class MyCloudServer {
             }
         }
 
-        private void dispatch(String cmd, String user,
+        private void dispatch(String cmd,
                               ObjectInputStream in,
                               ObjectOutputStream out) throws Exception {
-            // Diretório de armazenamento relativo: server/server_storage/<user>
-            File userDir = new File("server_storage", user);
-            if (!userDir.exists() && !userDir.mkdirs()) {
-                throw new IOException("Não foi possível criar diretório de usuário: " + userDir.getPath());
+            // Garante que a pasta de armazenamento existe
+            if (!STORAGE_DIR.exists() && !STORAGE_DIR.mkdirs()) {
+                throw new IOException("Não foi possível criar diretório de armazenamento");
             }
 
             switch (cmd) {
-                case "-e": // upload atomizado
-                    handleUpload(userDir, in, out);
+                case "-e": // upload
+                    System.out.println("Upload de ficheiros");
+                    handleUpload(in, out);
                     break;
-                case "-r": // download simples
-                    handleDownload(userDir, in, out);
+                case "-r": // download
+                    System.out.println("Download de ficheiros");
+                    handleDownload(in, out);
                     break;
                 default:
                     out.writeObject("ERRO: comando desconhecido " + cmd);
             }
         }
 
-        private void handleUpload(File userDir,
-                                  ObjectInputStream in,
+        private void handleUpload(ObjectInputStream in,
                                   ObjectOutputStream out) throws Exception {
-            // 1) Receber lista de nomes até 'Terminou'
+            // 1) Receber lista de nomes
             List<String> names = new ArrayList<>();
             while (true) {
-                String name = in.readObject().toString();
-                if ("Terminou".equals(name)) break;
-                names.add(name);
+                String raw = in.readObject().toString();
+                if ("Terminou".equals(raw)) break;
+                names.add(Paths.get(raw).getFileName().toString());
             }
             // 2) Verificar existência prévia
             for (String name : names) {
-                if (new File(userDir, name).exists()) {
-                    out.writeObject("ERRO: já existe " + name + ", abortando upload");
+                if (new File(STORAGE_DIR, name).exists()) {
+                    out.writeObject("ERRO: já existe " + name);
+                    System.out.println("ERRO: já existe " + name);
                     return;
                 }
             }
+            // 3) Permitir envio
             out.writeObject("OK: pode enviar");
 
-            // 3) Receber ficheiros para temporários
-            Map<String,Path> tempFiles = new LinkedHashMap<>();
+            // 4) Receber ficheiros e gravar
             for (String name : names) {
                 long size = (Long) in.readObject();
-                Path temp = Files.createTempFile("upload-", null);
-                try (OutputStream fos = Files.newOutputStream(temp)) {
+                File dst = new File(STORAGE_DIR, name);
+                try (OutputStream os = new FileOutputStream(dst)) {
                     byte[] buf = new byte[4096];
                     long read = 0;
                     while (read < size) {
-                        int r = in.read(buf, 0, (int)Math.min(buf.length, size - read));
-                        fos.write(buf, 0, r);
+                        int r = in.read(buf, 0,
+                            (int) Math.min(buf.length, size - read));
+                        os.write(buf, 0, r);
                         read += r;
                     }
                 }
-                tempFiles.put(name, temp);
-            }
-
-            // 4) Mover para diretório final e confirmar
-            for (Map.Entry<String,Path> e : tempFiles.entrySet()) {
-                Path dst = userDir.toPath().resolve(e.getKey());
-                Files.move(e.getValue(), dst, StandardCopyOption.ATOMIC_MOVE);
-                out.writeObject("UPLOAD OK: " + e.getKey());
+                out.writeObject("UPLOAD OK: " + name);
+                System.out.println("Ficheiro recebido: " + name + " (" + size + " bytes)");
             }
         }
 
-        private void handleDownload(File userDir,
-                                    ObjectInputStream in,
+        private void handleDownload(ObjectInputStream in,
                                     ObjectOutputStream out) throws Exception {
+            // 1) Receber lista de nomes
+            List<String> names = new ArrayList<>();
             while (true) {
-                String name = in.readObject().toString();
-                if ("Terminou".equals(name)) break;
-                File f = new File(userDir, name);
+                String raw = in.readObject().toString();
+                if ("Terminou".equals(raw)) break;
+                names.add(Paths.get(raw).getFileName().toString());
+            }
+            // 2) Enviar cada ficheiro
+            for (String name : names) {
+                File f = new File(STORAGE_DIR, name);
                 if (!f.exists()) {
                     out.writeObject("ERRO: não existe " + name);
+                    System.out.println("ERRO: não existe " + name);
                     continue;
                 }
-                out.writeObject(f.getName());
+                out.writeObject(name);
                 out.writeObject(f.length());
-                try (InputStream fis = new FileInputStream(f)) {
+                System.out.println("A enviar ficheiro: " + name + " (" + f.length() + " bytes)");
+                try (InputStream is = new FileInputStream(f)) {
                     byte[] buf = new byte[4096];
                     int r;
-                    while ((r = fis.read(buf)) != -1) {
+                    while ((r = is.read(buf)) != -1) {
                         out.write(buf, 0, r);
                     }
                 }
@@ -190,10 +190,9 @@ public class MyCloudServer {
         }
     }
 
-    /** Autenticação dinâmica, recarrega users a cada chamada **/
     static class Auth {
         public static boolean check(String u, String p) {
-            Map<String,String[]> users = loadUsers();
+            Map<String, String[]> users = loadUsers();
             String[] parts = users.get(u);
             if (parts == null) return false;
             try {
@@ -207,10 +206,10 @@ public class MyCloudServer {
             }
         }
 
-        private static Map<String,String[]> loadUsers() {
+        private static Map<String, String[]> loadUsers() {
             try {
                 List<String> lines = Files.readAllLines(USERS_FILE.toPath(), StandardCharsets.UTF_8);
-                Map<String,String[]> map = new HashMap<>();
+                Map<String, String[]> map = new HashMap<>();
                 for (String l : lines) {
                     String[] a = l.split(":", 3);
                     if (a.length == 3) map.put(a[0], new String[]{a[1], a[2]});
@@ -222,7 +221,6 @@ public class MyCloudServer {
         }
     }
 
-    /** Validação HMAC-SHA256 de um ficheiro **/
     static class HMAC {
         public static boolean check(File dataFile, File macFile, String pwd) throws Exception {
             byte[] data = Files.readAllBytes(dataFile.toPath());

@@ -7,12 +7,13 @@ import java.util.*;
 
 public class MyCloud {
     public static void main(String[] args) throws Exception {
-        String serverHost = null; // IP ou hostname do servidor
-        int    serverPort = -1;   // Porta TCP
+        String serverHost = null;
+        int    serverPort = -1;
         String user       = null;
         String pass       = null;
         boolean isUpload  = false;
         boolean isDownload= false;
+        boolean isCifrar  = false;
         List<String> files= new ArrayList<>();
 
         // 1) Parsing dos argumentos
@@ -58,7 +59,7 @@ public class MyCloud {
                     for (int j = i+1; j < args.length; j++) {
                         files.add(args[j]);
                     }
-                    i = args.length;
+                    i = args.length;  
                     break;
 
                 case "-r":
@@ -69,16 +70,32 @@ public class MyCloud {
                     i = args.length;
                     break;
 
+                case "-c":
+                    
+                    if (i + 1 >= args.length) {
+                        System.err.println("Falta ficheiro após -c");
+                        System.exit(1);
+                    }
+                    
+                    cipherFile = args[++i];
+                    
+                    if (i + 1 < args.length) {
+                        System.err.println("Só 1 ficheiro");
+                        System.exit(1);
+                    }
+                    isCipher = true;
+                    break;
+
                 default:
                     System.err.println("Argumento desconhecido: " + args[i]);
                     System.exit(1);
             }
         }
 
-        // 2) Validação mínima
+        
         if (serverHost == null || serverPort < 0
             || user == null || pass == null
-            || (isUpload == isDownload)  // deve ser um ou outro
+            || (isUpload == isDownload)  
             || files.isEmpty())
         {
             System.err.println("Uso válido:");
@@ -87,23 +104,23 @@ public class MyCloud {
             System.exit(1);
         }
 
-        // 3) Configurar TrustStore para TLS
+        // TrustStore 
         String tsRelPath = "../keystores/truststore.jks";
         String tsAbPath  = new File(tsRelPath).getAbsolutePath();
         System.setProperty("javax.net.ssl.trustStore",   tsAbPath);
         System.setProperty("javax.net.ssl.trustStorePassword", "epocaespecial");
         System.setProperty("javax.net.ssl.trustStoreType",     "JKS");
 
-        // 4) Abrir SSLSocket e forçar handshake
+        //SSLSocket e handshake
         SSLSocketFactory sf = (SSLSocketFactory) SSLSocketFactory.getDefault();
         try (SSLSocket socket = (SSLSocket) sf.createSocket(serverHost, serverPort)) {
             socket.startHandshake();
 
-            // 5) Abrir streams de objeto
+            
             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
             ObjectInputStream  in  = new ObjectInputStream(socket.getInputStream());
 
-            // 6) Autenticação
+            //Autenticação
             out.writeObject(user);
             out.writeObject(pass);
             out.flush();
@@ -114,10 +131,78 @@ public class MyCloud {
             }
             System.out.println("Autenticado com sucesso.");
 
-            // Próximos passos: chamar doUpload(files, out, in) se isUpload
-            // ou doDownload(files, out, in) se isDownload
+           
+            if (isUpload) {
+                doUpload(files, out, in);
+            } else {
+                doDownload(files, out, in);
+            }
         }
     }
 
-    // Métodos doUpload(...) e doDownload(...) virão aqui
+    private static void doUpload(List<String> files,
+                                 ObjectOutputStream out,
+                                 ObjectInputStream in) throws Exception {
+        out.writeObject("-e");
+        for (String f : files) out.writeObject(new File(f).getName());
+        out.writeObject("Terminou");
+        out.flush();
+
+        String resp = in.readObject().toString();
+        if (!resp.startsWith("OK")) {
+            System.err.println(resp);
+            return;
+        }
+
+        for (String path : files) {
+            File file = new File(path);
+            out.writeObject(file.length());
+            try (FileInputStream fis = new FileInputStream(file)) {
+                byte[] buf = new byte[4096];
+                int r;
+                while ((r = fis.read(buf)) != -1) {
+                    out.write(buf, 0, r);
+                }
+            }
+        }
+        out.flush();
+
+        for (int i = 0; i < files.size(); i++) {
+            System.out.println(in.readObject().toString());
+        }
+    }
+
+    private static void doDownload(List<String> files,
+                                   ObjectOutputStream out,
+                                   ObjectInputStream in) throws Exception {
+        out.writeObject("-r");
+        for (String name : files) out.writeObject(name);
+        out.writeObject("Terminou");
+        out.flush();
+
+        File outDir = new File("fromServer");
+        if (!outDir.exists()) outDir.mkdirs();
+
+        for (String ignored : files) {
+            String res = in.readObject().toString();
+            if (res.startsWith("ERRO")) {
+                System.err.println(res);
+                continue;
+            }
+            String filename = res;
+            long size = (Long) in.readObject();
+
+            File target = new File(outDir, filename);
+            try (FileOutputStream fos = new FileOutputStream(target)) {
+                byte[] buf = new byte[4096];
+                long received = 0;
+                while (received < size) {
+                    int r = in.read(buf, 0, (int)Math.min(buf.length, size - received));
+                    fos.write(buf, 0, r);
+                    received += r;
+                }
+            }
+            System.out.println("Download tá nice: " + filename);
+        }
+    }
 }
