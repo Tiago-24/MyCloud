@@ -1,9 +1,13 @@
 package mycloud;
 
 import javax.net.ssl.SSLSocketFactory;
+import javax.crypto.SecretKey;
 import javax.net.ssl.SSLSocket;
 import java.io.*;
+import java.security.PublicKey;
 import java.util.*;
+
+import mycloudutils.Utils;
 
 public class MyCloud {
     public static void main(String[] args) throws Exception {
@@ -14,6 +18,8 @@ public class MyCloud {
         boolean isUpload  = false;
         boolean isDownload= false;
         boolean isCifrar  = false;
+        String nomeficheiro = null;
+        String userDestinatario = null;
         List<String> files= new ArrayList<>();
 
         // 1) Parsing dos argumentos
@@ -77,13 +83,21 @@ public class MyCloud {
                         System.exit(1);
                     }
                     
-                    cipherFile = args[++i];
+                    nomeficheiro = args[++i];
                     
                     if (i + 1 < args.length) {
                         System.err.println("Só 1 ficheiro");
                         System.exit(1);
                     }
-                    isCipher = true;
+                    isCifrar = true;
+                    break;
+                
+                case "-t":
+                    if (i+1 >= args.length) {
+                        System.err.println("Falta usuário após -t");
+                        System.exit(1);
+                    }
+                    userDestinatario = args[++i];
                     break;
 
                 default:
@@ -134,8 +148,10 @@ public class MyCloud {
            
             if (isUpload) {
                 doUpload(files, out, in);
-            } else {
+            } else if(isDownload){
                 doDownload(files, out, in);
+            } else if(isCifrar){
+                doCifrar(nomeficheiro,userDestinatario);
             }
         }
     }
@@ -204,5 +220,16 @@ public class MyCloud {
             }
             System.out.println("Download tá nice: " + filename);
         }
+    }
+
+
+    private static void doCifrar(String nomeficheiro, String userDest){
+        
+        SecretKey aes = Utils.generateAESKey();
+        PublicKey pubk = Utils.loadPublicKey(userDest, userassinate); //Ver que merda é esta do userassinate
+
+        //iniciar aqui o inputFile e o OutputFile
+        Utils.encryptFile(null, null, aes, pubk, userDest, nomeficheiro);
+
     }
 }
