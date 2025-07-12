@@ -18,6 +18,7 @@ public class MyCloud {
         boolean isUpload  = false;
         boolean isDownload= false;
         boolean isCifrar  = false;
+        boolean isDecifrar = false;
         String nomeficheiro = null;
         String userDestinatario = null;
         List<String> files= new ArrayList<>();
@@ -93,6 +94,15 @@ public class MyCloud {
                     userDestinatario = args[++i];
                     break;
 
+                case "-d":
+                    if (i + 1 >= args.length) {
+                        System.err.println("Falta ficheiro após -d");
+                        System.exit(1);
+                    }
+                    ficheiroEncriptado = args[++i];
+                    isDecifrar = true;
+                    break;
+
                 default:
                     System.err.println("Argumento desconhecido: " + args[i]);
                     System.exit(1);
@@ -102,12 +112,23 @@ public class MyCloud {
         
         if (isCifrar) {
             if (nomeficheiro == null || userDestinatario == null) {
-                System.err.println("Uso para cifrar: -u user -p pass -c ficheiro -t destinatário");
+                System.err.println("Uso para cifrar: -u username -p password -c nome_de_ficheiro -t destinatário");
                 System.exit(1);
             }
             doCifrar(nomeficheiro, userDestinatario);
             return;  // sai do main logo após cifrar
         }
+
+
+        if (isDecifrar) {
+            if (nomeficheiro == null) {
+                System.err.println("Uso para cifrar: -u username -p password -d nome_de_ficheiro");
+                System.exit(1);
+            }
+            doDecifrar(ficheiroEncriptado, user);
+            return;  // sai do main logo após decifrar
+        }
+
 
         // 3) Modo UPLOAD ou DOWNLOAD (mantém as checagens antigas)
         if (serverHost == null || serverPort < 0
@@ -152,9 +173,7 @@ public class MyCloud {
                 doUpload(files, out, in);
             } else if(isDownload){
                 doDownload(files, out, in);
-            } else if(isCifrar){
-                doCifrar(nomeficheiro,userDestinatario);
-            }
+           
         }
     }
 
@@ -235,5 +254,11 @@ public class MyCloud {
         File outputFile = new File("../", nomeficheiro + ".cifrado");
         Utils.encryptFile(inputFile, outputFile, aes, pubk, userDest, nomeficheiro);
 
+    }
+
+    private static voic doDecifrar(String nome_de_ficheiro, String user){
+        String keyFileName = encryptedFileName + ".chave." + user;
+        File enc = new File("../fromServer" + encryptedFileName);
+        File key = new File("../fromServer" + keyFileName);
     }
 }
