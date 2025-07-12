@@ -28,8 +28,8 @@ public class CriarUser {
             macPassword = new BufferedReader(new InputStreamReader(System.in)).readLine();
         }
 
-        File usersFile = new File("users");
-        File macFile   = new File("users.mac");
+        File usersFile = new File("../config/users");
+        File macFile   = new File("../config/users.mac");
 
         // 2) Verificar integridade do ficheiro users
         if (usersFile.exists()) {

@@ -16,16 +16,18 @@ public class Utils {
     
 
     //AES aleatória
-    public static SecretKey generateAESKey() throws NoSuchAlgorithmException {
+    public static SecretKey generateAESKey() throws Exception {
         KeyGenerator keyGen = KeyGenerator.getInstance(AES_ALGORITHM);
         keyGen.init(AES_KEY_SIZE);
+        return keyGen.generateKey();
     }
 
-    public static PublicKey loadPublicKey(String userDestinatario, String userassinate) throws UnrecoverableKeyException, KeyStoreException, NoSuchAlgorithmException, CertificateException, IOException {
-		FileInputStream kfile2 = new FileInputStream(userDestinatario+".keystore");
+
+    public static PublicKey loadPublicKey(String userDest) throws Exception {
+		FileInputStream kfile2 = new FileInputStream("../keystores/keystore."+userDest);
 		KeyStore kstore = KeyStore.getInstance("PKCS12");
 		kstore.load(kfile2, "epocaespecial".toCharArray()); 
-		Certificate cert = kstore.getCertificate(userassinate);  // cert
+		Certificate cert = kstore.getCertificate(userDest);  // cert
         PublicKey publicKey = cert.getPublicKey();   // pubk
         kfile2.close();
         if (publicKey == null) {
@@ -38,16 +40,16 @@ public class Utils {
 	}
 
     //Ficheiro encriptado a partir da chave AES
-    public static void encryptFile(File inputFile, File outputFile, SecretKey secretKey, PublicKey pubk, String user, String filename) throws Exception {
+    public static void encryptFile(File inputFile, File outputFile, SecretKey secretKey, PublicKey pubk, String userDest, String filename) throws Exception {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, secretKey);
         processFile(cipher, inputFile, outputFile);
 
         Cipher cipher2 = Cipher.getInstance("RSA");
         cipher2.init(Cipher.WRAP_MODE, pubk);
-        byte[] newWrappedKey = cipher.wrap(secretKey);
+        byte[] newWrappedKey = cipher2.wrap(secretKey);
 
-        try (FileOutputStream kos = new FileOutputStream(filename + ".chave." + user)) {
+        try (FileOutputStream kos = new FileOutputStream("../" + filename + ".chave." + userDest)) {
             kos.write(newWrappedKey);
             
         }

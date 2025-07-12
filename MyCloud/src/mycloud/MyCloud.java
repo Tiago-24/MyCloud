@@ -77,21 +77,14 @@ public class MyCloud {
                     break;
 
                 case "-c":
-                    
                     if (i + 1 >= args.length) {
                         System.err.println("Falta ficheiro após -c");
                         System.exit(1);
                     }
-                    
                     nomeficheiro = args[++i];
-                    
-                    if (i + 1 < args.length) {
-                        System.err.println("Só 1 ficheiro");
-                        System.exit(1);
-                    }
                     isCifrar = true;
                     break;
-                
+                                
                 case "-t":
                     if (i+1 >= args.length) {
                         System.err.println("Falta usuário após -t");
@@ -107,9 +100,18 @@ public class MyCloud {
         }
 
         
+        if (isCifrar) {
+            if (nomeficheiro == null || userDestinatario == null) {
+                System.err.println("Uso para cifrar: -u user -p pass -c ficheiro -t destinatário");
+                System.exit(1);
+            }
+            doCifrar(nomeficheiro, userDestinatario);
+            return;  // sai do main logo após cifrar
+        }
+
+        // 3) Modo UPLOAD ou DOWNLOAD (mantém as checagens antigas)
         if (serverHost == null || serverPort < 0
             || user == null || pass == null
-            || (isUpload == isDownload)  
             || files.isEmpty())
         {
             System.err.println("Uso válido:");
@@ -171,7 +173,7 @@ public class MyCloud {
         }
 
         for (String path : files) {
-            File file = new File(path);
+            File file = new File("../", path);
             out.writeObject(file.length());
             try (FileInputStream fis = new FileInputStream(file)) {
                 byte[] buf = new byte[4096];
@@ -196,7 +198,7 @@ public class MyCloud {
         out.writeObject("Terminou");
         out.flush();
 
-        File outDir = new File("fromServer");
+        File outDir = new File("../fromServer");
         if (!outDir.exists()) outDir.mkdirs();
 
         for (String ignored : files) {
@@ -223,13 +225,15 @@ public class MyCloud {
     }
 
 
-    private static void doCifrar(String nomeficheiro, String userDest){
+    private static void doCifrar(String nomeficheiro, String userDest) throws Exception{
         
         SecretKey aes = Utils.generateAESKey();
-        PublicKey pubk = Utils.loadPublicKey(userDest, userassinate); //Ver que merda é esta do userassinate
+        PublicKey pubk = Utils.loadPublicKey(userDest); 
 
         //iniciar aqui o inputFile e o OutputFile
-        Utils.encryptFile(null, null, aes, pubk, userDest, nomeficheiro);
+        File inputFile  = new File("../", nomeficheiro);
+        File outputFile = new File("../", nomeficheiro + ".cifrado");
+        Utils.encryptFile(inputFile, outputFile, aes, pubk, userDest, nomeficheiro);
 
     }
 }
