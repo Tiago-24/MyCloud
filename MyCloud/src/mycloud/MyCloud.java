@@ -5,6 +5,7 @@ import javax.crypto.SecretKey;
 import javax.net.ssl.SSLSocket;
 import java.io.*;
 import java.security.PublicKey;
+import java.security.PrivateKey;
 import java.util.*;
 
 import mycloudutils.Utils;
@@ -15,13 +16,27 @@ public class MyCloud {
         int    serverPort = -1;
         String user       = null;
         String pass       = null;
+
+        //Enviar e Receber
         boolean isUpload  = false;
         boolean isDownload= false;
+
+        //Assinar e Decifrar
         boolean isCifrar  = false;
         boolean isDecifrar = false;
         String nomeficheiro = null;
         String userDestinatario = null;
+        String ficheiroEncriptado = null;
+
+        //Assinaturas
+        boolean isAssinar  = false;
+        boolean isVerificar = false;
+        String ficheiroAssinar   = null;
+        String ficheiroVerificar = null;
+
         List<String> files= new ArrayList<>();
+
+
 
         // 1) Parsing dos argumentos
         for (int i = 0; i < args.length; i++) {
@@ -103,6 +118,24 @@ public class MyCloud {
                     isDecifrar = true;
                     break;
 
+                case "-a":
+                    if (i+1 >= args.length) {
+                        System.err.println("Falta ficheiro após -a");
+                        System.exit(1);
+                    }
+                    ficheiroAssinar = args[++i];
+                    isAssinar = true;
+                    break;
+
+                case "-v":
+                    if (i+1 >= args.length) {
+                        System.err.println("Falta ficheiro após -v");
+                        System.exit(1);
+                    }
+                    ficheiroVerificar = args[++i];
+                    isVerificar = true;
+                    break;
+
                 default:
                     System.err.println("Argumento desconhecido: " + args[i]);
                     System.exit(1);
@@ -110,27 +143,45 @@ public class MyCloud {
         }
 
         
+        
         if (isCifrar) {
             if (nomeficheiro == null || userDestinatario == null) {
                 System.err.println("Uso para cifrar: -u username -p password -c nome_de_ficheiro -t destinatário");
                 System.exit(1);
             }
             doCifrar(nomeficheiro, userDestinatario);
-            return;  // sai do main logo após cifrar
+            return;  
         }
 
 
         if (isDecifrar) {
-            if (nomeficheiro == null) {
-                System.err.println("Uso para cifrar: -u username -p password -d nome_de_ficheiro");
+            if (ficheiroEncriptado == null) {
+                System.err.println("Uso para decifrar: -u username -p password -d nome_de_ficheiro");
                 System.exit(1);
             }
             doDecifrar(ficheiroEncriptado, user);
-            return;  // sai do main logo após decifrar
+            return;  
         }
 
+        if (isAssinar) {
+            if (user == null || pass == null || ficheiroAssinar == null) {
+                System.err.println("Uso para assinar: myCloud -u user -p pass -a nome_de_ficheiro");
+                System.exit(1);
+            }
+            doAssinar(user, ficheiroAssinar);
+            return;
+        }
 
-        // 3) Modo UPLOAD ou DOWNLOAD (mantém as checagens antigas)
+        if (isVerificar) {
+            if (user == null || pass == null || ficheiroVerificar == null) {
+                System.err.println("Uso para assinar: myCloud -u user -p pass -a nome_de_ficheiro");
+                System.exit(1);
+            }
+            doVerificar(user, ficheiroVerificar);
+            return;
+        }
+
+        //Download e Upload
         if (serverHost == null || serverPort < 0
             || user == null || pass == null
             || files.isEmpty())
@@ -173,9 +224,9 @@ public class MyCloud {
                 doUpload(files, out, in);
             } else if(isDownload){
                 doDownload(files, out, in);
-           
-        }
-    }
+            }
+        } 
+    } 
 
     private static void doUpload(List<String> files,
                                  ObjectOutputStream out,
@@ -256,9 +307,48 @@ public class MyCloud {
 
     }
 
-    private static voic doDecifrar(String nome_de_ficheiro, String user){
-        String keyFileName = encryptedFileName + ".chave." + user;
-        File enc = new File("../fromServer" + encryptedFileName);
-        File key = new File("../fromServer" + keyFileName);
+    private static void doDecifrar(String nomeficheiro, String user) throws Exception{
+
+        String baseName = nomeficheiro.replaceFirst("\\.cifrado$", "");
+
+        String keyFileName = baseName + ".chave." + user;
+        File enc = new File("../fromServer/" + nomeficheiro);
+        File key = new File("../fromServer/" + keyFileName); 
+
+        PrivateKey sk = Utils.loadPrivateKey(user);
+
+        File outDir = new File("../decifrado");
+        outDir.mkdirs();
+
+        Utils.decryptFile(outDir, enc, key, sk);
     }
+
+    private static void doAssinar(String user, String nomeficheiro) throws Exception{
+
+        PrivateKey sk = Utils.loadPrivateKey(user);
+
+        File input = new File("../", nomeficheiro);
+        if (!input.exists()) {
+            System.err.println("Erro: ficheiro não encontrado: " + input.getPath());
+            return;
+        }
+
+        byte[] sigBytes = Utils.signFile(input, sk);
+
+        String sigName = nomeficheiro + ".assinatura." + user;
+        File outSig = new File("../", sigName);
+        try (FileOutputStream fos = new FileOutputStream(outSig)) {
+            fos.write(sigBytes);
+        }
+
+        System.out.println("Ficheiro assinado com sucesso: " + sigName);
+        
+    }
+
+    private static void doVerificar(String user, String nomeficheiro) throws Exception{
+
+        
+    }
+
+
 }

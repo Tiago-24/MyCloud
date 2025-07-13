@@ -39,6 +39,22 @@ public class Utils {
 		
 	}
 
+
+    public static PrivateKey loadPrivateKey(String user) throws Exception{
+        try (FileInputStream fis = new FileInputStream("../keystores/keystore." + user)) {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            ks.load(fis, "epocaespecial".toCharArray());
+
+            Key key = ks.getKey(user, "epocaespecial".toCharArray());
+            if (!(key instanceof PrivateKey)) {
+                throw new KeyStoreException(
+                    "O alias " + user + " não tem uma PrivateKey");
+            }
+            return (PrivateKey) key;
+        }
+
+    }
+
     //Ficheiro encriptado a partir da chave AES
     public static void encryptFile(File inputFile, File outputFile, SecretKey secretKey, PublicKey pubk, String userDest, String filename) throws Exception {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
@@ -73,55 +89,69 @@ public class Utils {
         
     }
 
-    public static File decryptFile(File pasta,File fileencriptado, File chave, PrivateKey pk) throws Exception {
+    public static File decryptFile(File pasta, File fileencriptado, File chave, PrivateKey pk) throws Exception {
     	
-    	FileInputStream keyFile = new FileInputStream(chave);
-        byte[] encryptedSecretKey = keyFile.readAllBytes();
-        keyFile.close();
+    	byte[] encryptedSecretKey;
+        try (FileInputStream keyFis = new FileInputStream(chave)) {
+            encryptedSecretKey = keyFis.readAllBytes();
+        }
         
         
         Cipher rsaCipher = Cipher.getInstance("RSA");
         rsaCipher.init(Cipher.DECRYPT_MODE, pk);
         byte[] secretKeyEncoded = rsaCipher.doFinal(encryptedSecretKey);
+        
     	
-        SecretKeySpec secretKey1 = new SecretKeySpec(secretKeyEncoded, "AES");
+        SecretKeySpec secretKey = new SecretKeySpec(secretKeyEncoded, "AES");
         
         
         Cipher aesCipher = Cipher.getInstance("AES");
-        aesCipher.init(Cipher.DECRYPT_MODE, secretKey1);
+        aesCipher.init(Cipher.DECRYPT_MODE, secretKey);
         
-        String nomeficheirodecript;
+        String nomeOriginal = fileencriptado.getName().replaceFirst("\\.cifrado$", "");
+        File outputFile = new File(pasta, nomeOriginal);
+           
+        try (FileInputStream  fis = new FileInputStream(fileencriptado);
+         CipherInputStream cis = new CipherInputStream(fis, aesCipher);
+         FileOutputStream fos = new FileOutputStream(outputFile)) {
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = cis.read(buffer)) != -1) {
+                fos.write(buffer, 0, len);
+            }
+        }   
         
-        if(fileencriptado.getName().contains(".secure")) {
-        	
-        	nomeficheirodecript = fileencriptado.getName().replace(".secure", "");
-        }
-        else {
-        	nomeficheirodecript = fileencriptado.getName().replace(".encrypted", "");
-        }
+        System.out.println("Ficheiro decifrado com sucesso: "+ fileencriptado.getName()+ " para " + outputFile.getName());
         
-        
-        //nomeficheirodecript.replace(".secure", "");
-        File ficheirodecript = new File(pasta,nomeficheirodecript);
-        
-        
-        
-        
-        try (FileInputStream fis = new FileInputStream(fileencriptado);
-             CipherInputStream cis = new CipherInputStream(fis, aesCipher);
-             FileOutputStream fos = new FileOutputStream(ficheirodecript)) {
+        return outputFile;
+         
+    }
 
-            byte[] buffer = new byte[16];
+    public static byte[] signFile(File file, Key myPrivateKey) throws Exception {
+        Signature signature = Signature.getInstance("SHA256withRSA");
+        signature.initSign((PrivateKey) myPrivateKey);
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[1024];
             int bytesRead;
-            while ((bytesRead = cis.read(buffer)) != -1) {
-                fos.write(buffer, 0, bytesRead);
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                signature.update(buffer, 0, bytesRead);
             }
         }
-        
-        System.out.println("Ficheiro decifrado com sucesso: "+fileencriptado.getName() + " para o ficheiro: "+ ficheirodecript.getName());
-        
-        return ficheirodecript;
-         
+        return signature.sign();
+    }
+
+    // Verifica a assinatura de um ficheiro
+    public static boolean verifySignature(File file, byte[] signatureBytes, PublicKey publicKey) throws Exception {
+        Signature signature = Signature.getInstance("SHA256withRSA");
+        signature.initVerify(publicKey);
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                signature.update(buffer, 0, bytesRead);
+            }
+        }
+        return signature.verify(signatureBytes);
     }
 
 }
