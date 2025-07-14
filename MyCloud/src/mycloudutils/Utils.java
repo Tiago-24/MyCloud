@@ -23,10 +23,10 @@ public class Utils {
     }
 
 
-    public static PublicKey loadPublicKey(String userDest) throws Exception {
-		FileInputStream kfile2 = new FileInputStream("../keystores/keystore."+userDest);
+    public static PublicKey loadPublicKey(String user, String pass, String userDest) throws Exception {
+		FileInputStream kfile2 = new FileInputStream("../keystores/keystore."+user);
 		KeyStore kstore = KeyStore.getInstance("PKCS12");
-		kstore.load(kfile2, "epocaespecial".toCharArray()); 
+		kstore.load(kfile2, pass.toCharArray()); 
 		Certificate cert = kstore.getCertificate(userDest);  // cert
         PublicKey publicKey = cert.getPublicKey();   // pubk
         kfile2.close();
@@ -40,12 +40,12 @@ public class Utils {
 	}
 
 
-    public static PrivateKey loadPrivateKey(String user) throws Exception{
+    public static PrivateKey loadPrivateKey(String user, String pass) throws Exception{
         try (FileInputStream fis = new FileInputStream("../keystores/keystore." + user)) {
             KeyStore ks = KeyStore.getInstance("PKCS12");
-            ks.load(fis, "epocaespecial".toCharArray());
+            ks.load(fis, pass.toCharArray());
 
-            Key key = ks.getKey(user, "epocaespecial".toCharArray());
+            Key key = ks.getKey(user, pass.toCharArray());
             if (!(key instanceof PrivateKey)) {
                 throw new KeyStoreException(
                     "O alias " + user + " não tem uma PrivateKey");

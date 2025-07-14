@@ -149,7 +149,7 @@ public class MyCloud {
                 System.err.println("Uso para cifrar: -u username -p password -c nome_de_ficheiro -t destinatário");
                 System.exit(1);
             }
-            doCifrar(nomeficheiro, userDestinatario);
+            doCifrar(nomeficheiro, user, pass, userDestinatario);
             return;  
         }
 
@@ -159,7 +159,7 @@ public class MyCloud {
                 System.err.println("Uso para decifrar: -u username -p password -d nome_de_ficheiro");
                 System.exit(1);
             }
-            doDecifrar(ficheiroEncriptado, user);
+            doDecifrar(ficheiroEncriptado, user, pass);
             return;  
         }
 
@@ -168,7 +168,7 @@ public class MyCloud {
                 System.err.println("Uso para assinar: myCloud -u user -p pass -a nome_de_ficheiro");
                 System.exit(1);
             }
-            doAssinar(user, ficheiroAssinar);
+            doAssinar(user, pass, ficheiroAssinar);
             return;
         }
 
@@ -177,7 +177,7 @@ public class MyCloud {
                 System.err.println("Uso para assinar: myCloud -u user -p pass -a nome_de_ficheiro");
                 System.exit(1);
             }
-            doVerificar(user, ficheiroVerificar);
+            doVerificar(user, pass, ficheiroVerificar);
             return;
         }
 
@@ -295,19 +295,18 @@ public class MyCloud {
     }
 
 
-    private static void doCifrar(String nomeficheiro, String userDest) throws Exception{
+    private static void doCifrar(String nomeficheiro, String user, String pass, String userDest) throws Exception{
         
         SecretKey aes = Utils.generateAESKey();
-        PublicKey pubk = Utils.loadPublicKey(userDest); 
+        PublicKey pubk = Utils.loadPublicKey(user, pass, userDest); 
 
-        //iniciar aqui o inputFile e o OutputFile
         File inputFile  = new File("../", nomeficheiro);
         File outputFile = new File("../", nomeficheiro + ".cifrado");
         Utils.encryptFile(inputFile, outputFile, aes, pubk, userDest, nomeficheiro);
 
     }
 
-    private static void doDecifrar(String nomeficheiro, String user) throws Exception{
+    private static void doDecifrar(String nomeficheiro, String user, String pass) throws Exception{
 
         String baseName = nomeficheiro.replaceFirst("\\.cifrado$", "");
 
@@ -315,7 +314,7 @@ public class MyCloud {
         File enc = new File("../fromServer/" + nomeficheiro);
         File key = new File("../fromServer/" + keyFileName); 
 
-        PrivateKey sk = Utils.loadPrivateKey(user);
+        PrivateKey sk = Utils.loadPrivateKey(user, pass);
 
         File outDir = new File("../decifrado");
         outDir.mkdirs();
@@ -323,9 +322,9 @@ public class MyCloud {
         Utils.decryptFile(outDir, enc, key, sk);
     }
 
-    private static void doAssinar(String user, String nomeficheiro) throws Exception{
+    private static void doAssinar(String user, String pass, String nomeficheiro) throws Exception{
 
-        PrivateKey sk = Utils.loadPrivateKey(user);
+        PrivateKey sk = Utils.loadPrivateKey(user, pass);
 
         File input = new File("../", nomeficheiro);
         if (!input.exists()) {
@@ -345,7 +344,51 @@ public class MyCloud {
         
     }
 
-    private static void doVerificar(String user, String nomeficheiro) throws Exception{
+    private static void doVerificar(String user,String pass, String nomeficheiro) throws Exception{
+
+        String baseName;
+        String marker = ".assinatura.";
+        int idx = nomeficheiro.lastIndexOf(marker);
+        if (idx >= 0) {
+            baseName = nomeficheiro.substring(0, idx);
+        } else {
+            baseName = nomeficheiro;
+        }
+
+        String aliasAssinatura = nomeficheiro.substring(idx + marker.length());
+
+
+        File base = new File("../fromServer", baseName);
+        File fileAssinado = new File("../fromServer", nomeficheiro);
+
+
+        if (!base.exists()) {
+            System.err.println("Original não encontrado: " + base.getPath());
+            return;
+        }
+
+        if (!fileAssinado.exists()) {
+            System.err.println("Assinatura não encontrada: " + fileAssinado.getPath());
+            return;
+        }
+
+        PublicKey pubk = Utils.loadPublicKey(user, pass, aliasAssinatura);
+
+        byte[] sigBytes;
+        try (FileInputStream fis = new FileInputStream(fileAssinado)) {
+            sigBytes = fis.readAllBytes();
+        }
+
+        boolean validado = Utils.verifySignature(base, sigBytes, pubk);
+
+
+        String resultado;
+        if (validado) {
+            resultado = "Assinatura válida: " + baseName + " (assinada por " + aliasAssinatura + ")";
+        } else {
+            resultado = "Assinatura inválida: " + baseName + " (assinada por " + aliasAssinatura + ")";
+        }
+        System.out.println(resultado);
 
         
     }
