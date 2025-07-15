@@ -17,7 +17,7 @@ public class CriarUser {
         String username = args[0];
         String password = args[1];
 
-        // 1) Ler password do MAC
+        
         Console console = System.console();
         String macPassword;
         if (console != null) {
@@ -31,7 +31,7 @@ public class CriarUser {
         File usersFile = new File("../config/users");
         File macFile   = new File("../config/users.mac");
 
-        // 2) Verificar integridade do ficheiro users
+        
         if (usersFile.exists()) {
             if (!macFile.exists()) {
                 System.err.println("Erro: users.mac não encontrado");
@@ -49,7 +49,7 @@ public class CriarUser {
             }
         }
 
-        // 3) Carregar linhas existentes e verificar se já existe user
+        
         List<String> lines = new ArrayList<>();
         if (usersFile.exists()) {
             lines = Files.readAllLines(usersFile.toPath());
@@ -61,7 +61,7 @@ public class CriarUser {
             }
         }
 
-        // 4) Gerar salt e hash
+        
         byte[] saltBytes = new byte[16];
         SecureRandom.getInstanceStrong().nextBytes(saltBytes);
         String saltB64 = Base64.getEncoder().encodeToString(saltBytes);
@@ -71,11 +71,11 @@ public class CriarUser {
         md.update(password.getBytes("UTF-8"));
         String hashB64 = Base64.getEncoder().encodeToString(md.digest());
 
-        // 5) Adicionar nova linha user:salt:hash
+        
         lines.add(username + ":" + saltB64 + ":" + hashB64);
         Files.write(usersFile.toPath(), lines);
 
-        // 6) Recalcular e gravar novo MAC
+       
         Mac mac2 = Mac.getInstance("HmacSHA256");
         mac2.init(new SecretKeySpec(macPassword.getBytes("UTF-8"), "HmacSHA256"));
         byte[] macBytes = mac2.doFinal(Files.readAllBytes(usersFile.toPath()));

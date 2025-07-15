@@ -298,11 +298,28 @@ public class MyCloud {
     private static void doCifrar(String nomeficheiro, String user, String pass, String userDest) throws Exception{
         
         SecretKey aes = Utils.generateAESKey();
-        PublicKey pubk = Utils.loadPublicKey(user, pass, userDest); 
+
+        PublicKey pubk;
+        try {
+        
+            pubk = Utils.loadPublicKey(user, pass, userDest);
+        } catch (IOException ioe) {
+            
+            System.err.println("Password incorreta");
+            return;
+        }
 
         File inputFile  = new File("../", nomeficheiro);
         File outputFile = new File("../", nomeficheiro + ".cifrado");
+
+        if (!inputFile.exists()) {
+            System.err.println("Ficheiro não existe: " + nomeficheiro);
+            return;
+        }
+
         Utils.encryptFile(inputFile, outputFile, aes, pubk, userDest, nomeficheiro);
+
+        System.out.println("Ficheiro encriptado com sucesso: "+ outputFile.getName());
 
     }
 
@@ -314,7 +331,16 @@ public class MyCloud {
         File enc = new File("../fromServer/" + nomeficheiro);
         File key = new File("../fromServer/" + keyFileName); 
 
-        PrivateKey sk = Utils.loadPrivateKey(user, pass);
+        PrivateKey sk;
+        try {
+        
+            sk = Utils.loadPrivateKey(user, pass);
+        } catch (IOException ioe) {
+            
+            System.err.println("Password incorreta");
+            return;
+        }
+
 
         File outDir = new File("../decifrado");
         outDir.mkdirs();
@@ -379,14 +405,21 @@ public class MyCloud {
             sigBytes = fis.readAllBytes();
         }
 
-        boolean validado = Utils.verifySignature(base, sigBytes, pubk);
+        //boolean validado = Utils.verifySignature(base, sigBytes, pubk);
 
+        boolean validado;
+        try {
+            validado = Utils.verifySignature(base, sigBytes, pubk);
+        } catch (java.security.SignatureException e) {
+        
+            validado = false;
+        }
 
         String resultado;
         if (validado) {
-            resultado = "Assinatura válida: " + baseName + " (assinada por " + aliasAssinatura + ")";
+            resultado = "Assinatura válida: " + baseName + " (assinado por " + aliasAssinatura + ")";
         } else {
-            resultado = "Assinatura inválida: " + baseName + " (assinada por " + aliasAssinatura + ")";
+            resultado = "Assinatura inválida: " + baseName;
         }
         System.out.println(resultado);
 

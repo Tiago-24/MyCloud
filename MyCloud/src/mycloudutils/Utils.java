@@ -73,7 +73,6 @@ public class Utils {
     }
 
     
-
     private static void processFile(Cipher cipher, File inputFile, File outputFile) throws Exception {
         try (FileInputStream fis = new FileInputStream(inputFile);
              FileOutputStream fos = new FileOutputStream(outputFile);
