@@ -17,7 +17,15 @@ public class MyCloudServer {
     private static final File USERS_FILE   = new File("../config/users");
     private static final File USERS_HMAC   = new File("../config/users.mac");
 
+
     public static void main(String[] args) throws Exception {
+
+        System.setProperty("javax.net.ssl.keyStore", "../keystores/keystore.server");
+        System.setProperty("javax.net.ssl.keyStorePassword", "epocaespecial");
+        System.setProperty("javax.net.ssl.trustStore", "../keystores/truststore.jks");
+        System.setProperty("javax.net.ssl.trustStorePassword", "epocaespecial");
+
+        
         if (args.length != 1) {
             System.err.println("Uso: java mycloudserver.MyCloudServer <porta_TCP>");
             System.exit(1);
