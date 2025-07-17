@@ -405,7 +405,7 @@ public class MyCloud {
             sigBytes = fis.readAllBytes();
         }
 
-        //boolean validado = Utils.verifySignature(base, sigBytes, pubk);
+        
 
         boolean validado;
         try {
