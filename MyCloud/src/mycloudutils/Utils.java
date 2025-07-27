@@ -15,7 +15,7 @@ public class Utils {
     private static final int AES_KEY_SIZE = 128;
     
 
-    //AES aleatória
+    
     public static SecretKey generateAESKey() throws Exception {
         KeyGenerator keyGen = KeyGenerator.getInstance(AES_ALGORITHM);
         keyGen.init(AES_KEY_SIZE);
@@ -27,8 +27,8 @@ public class Utils {
 		FileInputStream kfile2 = new FileInputStream("../keystores/keystore."+user);
 		KeyStore kstore = KeyStore.getInstance("PKCS12");
 		kstore.load(kfile2, pass.toCharArray()); 
-		Certificate cert = kstore.getCertificate(userDest);  // cert
-        PublicKey publicKey = cert.getPublicKey();   // pubk
+		Certificate cert = kstore.getCertificate(userDest);  
+        PublicKey publicKey = cert.getPublicKey();   
         kfile2.close();
         if (publicKey == null) {
             System.out.println("Erro: Não foi possível ler a chave pública!");
@@ -55,7 +55,7 @@ public class Utils {
 
     }
 
-    //Ficheiro encriptado a partir da chave AES
+    
     public static void encryptFile(File inputFile, File outputFile, SecretKey secretKey, PublicKey pubk, String userDest, String filename) throws Exception {
         Cipher cipher = Cipher.getInstance(AES_ALGORITHM);
         cipher.init(Cipher.ENCRYPT_MODE, secretKey);
@@ -139,7 +139,7 @@ public class Utils {
         return signature.sign();
     }
 
-    // Verifica a assinatura de um ficheiro
+   
     public static boolean verifySignature(File file, byte[] signatureBytes, PublicKey publicKey) throws Exception {
         Signature signature = Signature.getInstance("SHA256withRSA");
         signature.initVerify(publicKey);

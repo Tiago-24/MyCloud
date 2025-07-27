@@ -38,7 +38,7 @@ public class MyCloud {
 
 
 
-        // 1) Parsing dos argumentos
+        
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
                 case "-s":
@@ -228,9 +228,7 @@ public class MyCloud {
         } 
     } 
 
-    private static void doUpload(List<String> files,
-                                 ObjectOutputStream out,
-                                 ObjectInputStream in) throws Exception {
+    private static void doUpload(List<String> files,ObjectOutputStream out,ObjectInputStream in) throws Exception {
         out.writeObject("-e");
         for (String f : files) out.writeObject(new File(f).getName());
         out.writeObject("Terminou");
@@ -244,6 +242,12 @@ public class MyCloud {
 
         for (String path : files) {
             File file = new File("../", path);
+            if (!file.exists()) {
+                System.err.println("Ficheiro não existe: " + path);
+                return;
+            }
+
+
             out.writeObject(file.length());
             try (FileInputStream fis = new FileInputStream(file)) {
                 byte[] buf = new byte[4096];
@@ -260,9 +264,7 @@ public class MyCloud {
         }
     }
 
-    private static void doDownload(List<String> files,
-                                   ObjectOutputStream out,
-                                   ObjectInputStream in) throws Exception {
+    private static void doDownload(List<String> files, ObjectOutputStream out,ObjectInputStream in) throws Exception {
         out.writeObject("-r");
         for (String name : files) out.writeObject(name);
         out.writeObject("Terminou");
@@ -281,6 +283,22 @@ public class MyCloud {
             long size = (Long) in.readObject();
 
             File target = new File(outDir, filename);
+            
+            if (target.exists()) {
+                
+                System.err.println("Ficheiro já existe: " + filename);
+                long remaining = size;
+                byte[] buf = new byte[4096];
+                while (remaining > 0) {
+                    int toRead = (int) Math.min(buf.length, remaining);
+                    int r = in.read(buf, 0, toRead);
+                    if (r < 0) break;
+                    remaining -= r;
+                }
+                continue;
+            }
+
+
             try (FileOutputStream fos = new FileOutputStream(target)) {
                 byte[] buf = new byte[4096];
                 long received = 0;
@@ -317,6 +335,11 @@ public class MyCloud {
             return;
         }
 
+        if (outputFile.exists()) {
+            System.err.println("Ficheiro já existe: " + outputFile.getName());
+            return;
+        }
+
         Utils.encryptFile(inputFile, outputFile, aes, pubk, userDest, nomeficheiro);
 
         System.out.println("Ficheiro encriptado com sucesso: "+ outputFile.getName());
@@ -330,6 +353,16 @@ public class MyCloud {
         String keyFileName = baseName + ".chave." + user;
         File enc = new File("../fromServer/" + nomeficheiro);
         File key = new File("../fromServer/" + keyFileName); 
+
+        if (!enc.exists()) {
+            System.err.println("Ficheiro cifrado não existe: " + nomeficheiro);
+            return;
+        }
+
+        if (!key.exists()) {
+            System.err.println("Ficheiro de chave não existe: " + keyFileName);
+            return;
+        }
 
         PrivateKey sk;
         try {
@@ -345,12 +378,24 @@ public class MyCloud {
         File outDir = new File("../decifrado");
         outDir.mkdirs();
 
+        File outFile = new File(outDir, baseName);
+        if (outFile.exists()) {
+            System.err.println("Ficheiro já existe: " + outFile.getName());
+            return;
+        }
+
         Utils.decryptFile(outDir, enc, key, sk);
     }
 
     private static void doAssinar(String user, String pass, String nomeficheiro) throws Exception{
 
-        PrivateKey sk = Utils.loadPrivateKey(user, pass);
+        PrivateKey sk;
+        try {
+            sk = Utils.loadPrivateKey(user, pass);
+        } catch (Exception e) {
+            System.err.println("Password da keystore incorreta");
+            return;
+        }
 
         File input = new File("../", nomeficheiro);
         if (!input.exists()) {
@@ -362,6 +407,11 @@ public class MyCloud {
 
         String sigName = nomeficheiro + ".assinatura." + user;
         File outSig = new File("../", sigName);
+        if (outSig.exists()) {
+            System.err.println("Ficheiro já existe: " + sigName);
+            return;
+        }
+
         try (FileOutputStream fos = new FileOutputStream(outSig)) {
             fos.write(sigBytes);
         }
@@ -398,7 +448,13 @@ public class MyCloud {
             return;
         }
 
-        PublicKey pubk = Utils.loadPublicKey(user, pass, aliasAssinatura);
+        PublicKey pubk;
+        try {
+            pubk = Utils.loadPublicKey(user, pass, aliasAssinatura);
+        } catch (Exception e) {
+            System.err.println("Password da keystore incorreta");
+            return;
+        }
 
         byte[] sigBytes;
         try (FileInputStream fis = new FileInputStream(fileAssinado)) {

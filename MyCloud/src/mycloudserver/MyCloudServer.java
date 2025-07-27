@@ -32,8 +32,8 @@ public class MyCloudServer {
         }
         int port = Integer.parseInt(args[0]);
 
-        // 1) Validar integridade de users via HMAC
-        System.out.print("Validando ficheiro de utilizadores… ");
+        
+        System.out.print("A validar o ficheiro de utilizadores… \n");
         String macPwd = promptHmacPassword();
         if (!HMAC.check(USERS_FILE, USERS_HMAC, macPwd)) {
             System.err.println("Falha na integridade de 'users'");
@@ -41,7 +41,7 @@ public class MyCloudServer {
         }
         System.out.println("OK");
 
-        // 2) Configurar TLS
+        
         System.setProperty("javax.net.ssl.keyStore",
             System.getProperty("keystore.path", "../keystores/keystore.server"));
         System.setProperty("javax.net.ssl.keyStorePassword",
@@ -78,7 +78,7 @@ public class MyCloudServer {
                 ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
                 ObjectInputStream  in  = new ObjectInputStream(socket.getInputStream());
             ) {
-                // Autenticação
+                
                 String user = in.readObject().toString();
                 String pass = in.readObject().toString();
                 if (!Auth.check(user, pass)) {
@@ -87,17 +87,17 @@ public class MyCloudServer {
                 }
                 out.writeObject("OK: autenticado");
 
-                // Loop de comandos
+                
                 while (true) {
                     String cmd = in.readObject().toString();
                     if ("Terminou".equals(cmd)) {
-                        out.writeObject("Até breve!");
+                        out.writeObject("Terminado.");
                         break;
                     }
                     dispatch(cmd, in, out);
                 }
             } catch (EOFException eof) {
-                // cliente desconectou
+                
             } catch (Exception e) {
                 e.printStackTrace();
             } finally {
@@ -105,20 +105,18 @@ public class MyCloudServer {
             }
         }
 
-        private void dispatch(String cmd,
-                              ObjectInputStream in,
-                              ObjectOutputStream out) throws Exception {
-            // Garante que a pasta de armazenamento existe
+        private void dispatch(String cmd, ObjectInputStream in, ObjectOutputStream out) throws Exception {
+            
             if (!STORAGE_DIR.exists() && !STORAGE_DIR.mkdirs()) {
                 throw new IOException("Não foi possível criar diretório de armazenamento");
             }
 
             switch (cmd) {
-                case "-e": // upload
+                case "-e": 
                     System.out.println("Upload de ficheiros");
                     handleUpload(in, out);
                     break;
-                case "-r": // download
+                case "-r": 
                     System.out.println("Download de ficheiros");
                     handleDownload(in, out);
                     break;
@@ -127,16 +125,15 @@ public class MyCloudServer {
             }
         }
 
-        private void handleUpload(ObjectInputStream in,
-                                  ObjectOutputStream out) throws Exception {
-            // 1) Receber lista de nomes
+        private void handleUpload(ObjectInputStream in, ObjectOutputStream out) throws Exception {
+            
             List<String> names = new ArrayList<>();
             while (true) {
                 String raw = in.readObject().toString();
                 if ("Terminou".equals(raw)) break;
                 names.add(Paths.get(raw).getFileName().toString());
             }
-            // 2) Verificar existência prévia
+            
             for (String name : names) {
                 if (new File(STORAGE_DIR, name).exists()) {
                     out.writeObject("ERRO: já existe " + name);
@@ -144,10 +141,10 @@ public class MyCloudServer {
                     return;
                 }
             }
-            // 3) Permitir envio
+            
             out.writeObject("OK: pode enviar");
 
-            // 4) Receber ficheiros e gravar
+            
             for (String name : names) {
                 long size = (Long) in.readObject();
                 File dst = new File(STORAGE_DIR, name);
@@ -166,16 +163,15 @@ public class MyCloudServer {
             }
         }
 
-        private void handleDownload(ObjectInputStream in,
-                                    ObjectOutputStream out) throws Exception {
-            // 1) Receber lista de nomes
+        private void handleDownload(ObjectInputStream in, ObjectOutputStream out) throws Exception {
+            
             List<String> names = new ArrayList<>();
             while (true) {
                 String raw = in.readObject().toString();
                 if ("Terminou".equals(raw)) break;
                 names.add(Paths.get(raw).getFileName().toString());
             }
-            // 2) Enviar cada ficheiro
+            
             for (String name : names) {
                 File f = new File(STORAGE_DIR, name);
                 if (!f.exists()) {
@@ -198,6 +194,7 @@ public class MyCloudServer {
         }
     }
 
+    //Autenticação dos users
     static class Auth {
         public static boolean check(String u, String p) {
             Map<String, String[]> users = loadUsers();
@@ -214,6 +211,7 @@ public class MyCloudServer {
             }
         }
 
+        
         private static Map<String, String[]> loadUsers() {
             try {
                 List<String> lines = Files.readAllLines(USERS_FILE.toPath(), StandardCharsets.UTF_8);
@@ -229,6 +227,7 @@ public class MyCloudServer {
         }
     }
 
+    //Verificação do mac
     static class HMAC {
         public static boolean check(File dataFile, File macFile, String pwd) throws Exception {
             byte[] data = Files.readAllBytes(dataFile.toPath());
