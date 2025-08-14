@@ -1,12 +1,3 @@
-<p align="center">
-  <img
-    src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&size=28&pause=500&color=1E90FF&center=true&width=600&lines=🔐+myCloud+-+Secure+File+Storage+System"
-    alt="Typing animation"
-  />
-</p>
-
----
-
 ## 🚀 About the Project
 
 **myCloud** is a simplified distributed **secure file storage system** developed in **Java** using the **Java Security API**.  
