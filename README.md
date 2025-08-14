@@ -26,7 +26,7 @@ Main features:
 
 ### 💻 Language & Frameworks
 <p align="center">
-  <img alt="Java" src="https://img.shields.io/badge/Java-007396?logo=openjdk&logoColor=white&style=for-the-badge" />
+  <img alt="Java" src="https://img.shields.io/badge/Java-ED8B00?logo=java&logoColor=white&style=for-the-badge" />
 </p>
 
 ### 🔒 Security & Cryptography
